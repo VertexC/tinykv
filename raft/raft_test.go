@@ -781,7 +781,7 @@ func testCandidateResetTerm(t *testing.T, mt pb.MessageType) {
 		t.Errorf("state = %s, want %s", c.State, StateFollower)
 	}
 
-	debugger.Printf("%+v\n", c)
+	// debugger.Printf("%+v\n", c)
 	// follower c term is reset with leader's
 	if a.Term != c.Term {
 		t.Errorf("follower term expected same term as leader's %d, got %d", a.Term, c.Term)
@@ -1443,8 +1443,8 @@ func TestSplitVote2AA(t *testing.T) {
 	// check whether the term values are expected
 	// n2.Term == 3
 	// n3.Term == 3
-	debugger.Printf("%+v", nt.peers[2].(*Raft))
-	debugger.Printf("%+v", nt.peers[3].(*Raft))
+	// debugger.Printf("%+v", nt.peers[2].(*Raft))
+	// debugger.Printf("%+v", nt.peers[3].(*Raft))
 	sm := nt.peers[2].(*Raft)
 	if sm.Term != 3 {
 		t.Errorf("peer 2 term: %d, want %d", sm.Term, 3)
@@ -1469,6 +1469,8 @@ func TestSplitVote2AA(t *testing.T) {
 	// node 2 election timeout first
 	nt.send(pb.Message{From: 2, To: 2, MsgType: pb.MessageType_MsgHup})
 
+	// debugger.Printf("%+v", nt.peers[2].(*Raft))
+	// debugger.Printf("%+v", nt.peers[3].(*Raft))
 	// check whether the term values are expected
 	// n2.Term == 4
 	// n3.Term == 4

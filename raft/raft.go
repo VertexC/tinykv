@@ -199,7 +199,7 @@ func newRaft(c *Config) *Raft {
 		Vote: None,
 		Denials: 0,
 		Votes: 0,
-		Term: 1,
+		Term: 0,
 		electionElapsed: 0,
 		heartbeatElapsed: 0,
 		RaftLog: log,
@@ -227,20 +227,15 @@ func (r *Raft) tick() {
 	// check current status
 	if r.State == StateFollower || r.State == StateCandidate {
 		r.electionElapsed++
-		r.termElapsed++
-		if r.termElapsed >= r.electionTimeout {
-			r.Term++
-			r.termElapsed = 0
-		}
 		if r.electionElapsed >= r.electionTimeout {
 			// debugger.Println(r.electionElapsed)
-			r.becomeCandidate()
 			r.Step(pb.Message {
 				MsgType: pb.MessageType_MsgHup,
 				From: r.id,
 				To: r.id,
 				Term: r.Term,
 			})
+			r.electionElapsed = 0
 		}
 	} else { // as leader
 		r.heartbeatElapsed++
@@ -267,6 +262,7 @@ func (r *Raft) becomeFollower(term uint64, lead uint64) {
 
 // becomeCandidate transform this peer's state to candidate
 func (r *Raft) becomeCandidate() {
+	r.Term++
 	r.State = StateCandidate
 	// reset electionTime and timeOut
 	r.electionElapsed = 0
@@ -274,6 +270,7 @@ func (r *Raft) becomeCandidate() {
 	r.Vote = None
 	r.votes = make(map[uint64]bool)
 	r.Votes = 0
+	// debugger.Printf("become candidate: %+v", *r)
 }
 
 // becomeLeader transform this peer's state to leader
@@ -292,7 +289,9 @@ func (r *Raft) Step(m pb.Message) error {
 	// Your Code Here (2A).
 	switch m.MsgType {
 	case pb.MessageType_MsgHup:
-		r.becomeCandidate()
+		if r.State == StateCandidate || r.State == StateFollower{
+			r.becomeCandidate()
+		}
 		// vote for itself
 		r.Step(pb.Message {
 			MsgType: pb.MessageType_MsgRequestVoteResponse,
@@ -358,7 +357,22 @@ func (r *Raft) Step(m pb.Message) error {
 		r.handleAppendEntries(m)
 	case pb.MessageType_MsgRequestVote:
 		if r.State == StateLeader || r.State == StateCandidate {
-			if r.Term > m.Term {
+			// if r.Term > m.Term || (r.Vote != None && r.Vote != m.From) {
+				
+			// } 
+			if r.Term < m.Term {
+				// revert to follower and try to vote
+				r.becomeFollower(m.Term, m.From)
+				// r.Step(m)
+				r.Vote = m.From
+				r.sendMsg(pb.Message {
+					MsgType: pb.MessageType_MsgRequestVoteResponse,
+					Reject: false,
+					From: r.id,
+					To: m.From,
+					Term: r.Term,
+				})
+			} else {
 				r.sendMsg(pb.Message {
 					MsgType: pb.MessageType_MsgRequestVoteResponse,
 					Reject: true,
@@ -366,10 +380,6 @@ func (r *Raft) Step(m pb.Message) error {
 					To: m.From,
 					Term: r.Term,
 				})
-			} else {
-				// revert to follower and try to vote
-				r.becomeFollower(m.Term, m.From)
-				r.Step(m)
 			}
 		} else { // as follower
 			// FIXME: what the fuck? Not consistent with discription in doc
