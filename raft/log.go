@@ -28,6 +28,8 @@ type RaftLog struct {
 	// storage contains all stable entries since the last snapshot.
 	storage Storage
 
+	// FIXME: what is the difference between commited and stabled???
+	
 	// committed is the highest log position that is known to be in
 	// stable storage on a quorum of nodes.
 	committed uint64
@@ -50,13 +52,37 @@ type RaftLog struct {
 	pendingSnapshot *pb.Snapshot
 
 	// Your Data Here (2A).
+	// last term of entries
+	highestTerm uint64
 }
 
 // newLog returns log using the given storage. It recovers the log
 // to the state that it just commits and applies the latest snapshot.
 func newLog(storage Storage) *RaftLog {
 	// Your Code Here (2A).
-	return nil
+	hi, _ := storage.LastIndex()
+	log := &RaftLog {
+		storage: storage,
+		entries: []pb.Entry {},
+		committed: hi,
+	}
+	return log
+}
+
+// FIXME: add by vertexc
+// return latest log term
+func (l *RaftLog) logTerm() uint64 {
+	storage := l.storage
+	highestTerm := uint64(0)
+	li, _ := storage.FirstIndex()
+	hi, _ := storage.LastIndex()
+	for i:=li; i<=hi; i++ {
+		term, _ := storage.Term(i)
+		if term > highestTerm {
+			highestTerm = term
+		}
+	}
+	return highestTerm
 }
 
 // We need to compact the log entries in some point of time like

@@ -79,6 +79,7 @@ func TestLeaderElection2AA(t *testing.T) {
 	}
 
 	for i, tt := range tests {
+		// debugger.Printf("%+v\n", *tt.network)
 		tt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 		sm := tt.network.peers[1].(*Raft)
 		if sm.State != tt.state {
@@ -629,6 +630,8 @@ func TestRecvMessageType_MsgRequestVote2AA(t *testing.T) {
 		sm := newTestRaft(1, []uint64{1}, 10, 1, NewMemoryStorage())
 		sm.State = tt.state
 		sm.Vote = tt.voteFor
+
+		// FIXME: assume highest term computation is done when index comes in?
 		sm.RaftLog = newLog(&MemoryStorage{ents: []pb.Entry{{}, {Index: 1, Term: 2}, {Index: 2, Term: 2}}})
 
 		// raft.Term is greater than or equal to raft.RaftLog.lastTerm. In this
@@ -744,12 +747,16 @@ func testCandidateResetTerm(t *testing.T, mt pb.MessageType) {
 		t.Errorf("state = %s, want %s", c.State, StateFollower)
 	}
 
-	// isolate 3 and increase term in rest
+	// isolate 3 and increase term in rest FIXME:???
 	nt.isolate(3)
 
 	nt.send(pb.Message{From: 2, To: 2, MsgType: pb.MessageType_MsgHup})
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 
+	// debugger.Printf("%+v\n", a)
+	// debugger.Printf("%+v\n", b)
+	// debugger.Printf("%+v\n", c)
+	// debugger.Printf("!~!~~~~~~~~~~~~~~~~~!")
 	if a.State != StateLeader {
 		t.Errorf("state = %s, want %s", a.State, StateLeader)
 	}
@@ -763,6 +770,9 @@ func testCandidateResetTerm(t *testing.T, mt pb.MessageType) {
 
 	nt.recover()
 
+	// debugger.Printf("%+v\n", a)
+	// debugger.Printf("%+v\n", b)
+	// debugger.Printf("%+v\n", c)
 	// leader sends to isolated candidate
 	// and expects candidate to revert to follower
 	nt.send(pb.Message{From: 1, To: 3, Term: a.Term, MsgType: mt})
@@ -771,6 +781,7 @@ func testCandidateResetTerm(t *testing.T, mt pb.MessageType) {
 		t.Errorf("state = %s, want %s", c.State, StateFollower)
 	}
 
+	debugger.Printf("%+v\n", c)
 	// follower c term is reset with leader's
 	if a.Term != c.Term {
 		t.Errorf("follower term expected same term as leader's %d, got %d", a.Term, c.Term)
@@ -1432,6 +1443,8 @@ func TestSplitVote2AA(t *testing.T) {
 	// check whether the term values are expected
 	// n2.Term == 3
 	// n3.Term == 3
+	debugger.Printf("%+v", nt.peers[2].(*Raft))
+	debugger.Printf("%+v", nt.peers[3].(*Raft))
 	sm := nt.peers[2].(*Raft)
 	if sm.Term != 3 {
 		t.Errorf("peer 2 term: %d, want %d", sm.Term, 3)

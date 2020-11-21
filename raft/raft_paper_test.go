@@ -74,6 +74,7 @@ func testUpdateTermFromMessage(t *testing.T, state StateType) {
 // TestStartAsFollower tests that when servers start up, they begin as followers.
 // Reference: section 5.2
 func TestStartAsFollower2AA(t *testing.T) {
+	// FIXME: why peers contain itself?
 	r := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, NewMemoryStorage())
 	if r.State != StateFollower {
 		t.Errorf("state = %s, want %s", r.State, StateFollower)
@@ -288,9 +289,18 @@ func testNonleaderElectionTimeoutRandomized(t *testing.T, state StateType) {
 		}
 
 		time := 0
-		for len(r.readMessages()) == 0 {
-			r.tick()
-			time++
+		// for len(r.readMessages()) == 0 {
+		// 	r.tick()
+		// 	time++
+		// }
+		for {
+			if msg := r.readMessages(); len(msg) != 0 {
+				// debugger.Printf("%d %+v", time, msg)
+				break
+			} else {
+				r.tick()
+				time++
+			}
 		}
 		timeouts[time] = true
 	}

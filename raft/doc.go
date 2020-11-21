@@ -59,7 +59,7 @@ To restart a node from previous state:
   // peer information is already included in the storage.
   n := raft.RestartNode(c)
 
-Now that you are holding onto a Node you have a few responsibilities:
+Now that when you are holding onto a Node you have a few responsibilities:
 
 First, you must read from the Node.Ready() channel and process the updates
 it contains. These steps may be performed in parallel, except as noted in step
@@ -229,9 +229,12 @@ stale log entries:
 
 	'MessageType_MsgRequestVote' requests votes for election. When a node is a follower or
 	candidate and 'MessageType_MsgHup' is passed to its Step method, then the node calls
-	'campaign' method to campaign itself to become a leader. Once 'campaign'
+    'campaign' method to campaign itself to become a leader. (FIXME: WTF?)Once 'campaign'
 	method is called, the node becomes candidate and sends 'MessageType_MsgRequestVote' to peers
-	in cluster to request votes. When passed to leader or candidate's Step
+	in cluster to request votes.
+    (FIXME: why leader or candidate just care about message term while follower care last term?
+    whu leader or candidate doesn't response?)
+    When passed to leader or candidate's Step
 	method and the message's Term is lower than leader's or candidate's,
 	'MessageType_MsgRequestVote' will be rejected ('MessageType_MsgRequestVoteResponse' is returned with Reject true).
 	If leader or candidate receives 'MessageType_MsgRequestVote' with higher term, it will revert
