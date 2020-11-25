@@ -143,11 +143,19 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 		votedWithConfig(cfg, 3, 2), // Node 4: Voted but didn't get logs
 		votedWithConfig(cfg, 3, 2)) // Node 5: Voted but didn't get logs
 
+	// for i := range n.peers {
+	// 	sm := n.peers[i].(*Raft)
+	// 	entries := sm.RaftLog.entries
+	// 	debugger.Printf("%+v\n", sm)
+	// 	debugger.Printf("%+v\n", entries)
+	// }
 	// Node 1 campaigns. The election fails because a quorum of nodes
 	// know about the election that already happened at term 2. Node 1's
 	// term is pushed ahead to 2.
-	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 	sm1 := n.peers[1].(*Raft)
+	// debugger.Printf("%+v\n", sm1)
+	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
+	// debugger.Printf("%+v\n", sm1)
 	if sm1.State != StateFollower {
 		t.Errorf("state = %s, want StateFollower", sm1.State)
 	}
@@ -157,6 +165,8 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 
 	// Node 1 campaigns again with a higher term. This time it succeeds.
 	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
+	// debugger.Printf("%+v\n", sm1)
+	// debugger.Printf("%+v\n", sm1.RaftLog.entries)
 	if sm1.State != StateLeader {
 		t.Errorf("state = %s, want StateLeader", sm1.State)
 	}
@@ -164,11 +174,21 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 		t.Errorf("term = %d, want 3", sm1.Term)
 	}
 
+
+	// for i := range n.peers {
+	// 	sm := n.peers[i].(*Raft)
+	// 	entries := sm.RaftLog.entries
+	// 	debugger.Printf("%+v\n", sm)
+	// 	debugger.Printf("%+v\n", entries)
+	// }
+
 	// Now all nodes agree on a log entry with term 1 at index 1 (and
 	// term 3 at index 2).
 	for i := range n.peers {
 		sm := n.peers[i].(*Raft)
 		entries := sm.RaftLog.entries
+		// debugger.Printf("%+v\n", sm)
+		// debugger.Printf("%+v\n", sm.RaftLog.entries)
 		if len(entries) != 2 {
 			t.Fatalf("node %d: len(entries) == %d, want 2", i, len(entries))
 		}
@@ -249,6 +269,8 @@ func TestLogReplication2AB(t *testing.T) {
 		{
 			newNetwork(nil, nil, nil),
 			[]pb.Message{
+				// FIXME: by propose to itself, will commit?
+				// Propose without any term or index
 				{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
 			},
 			2,
@@ -257,6 +279,7 @@ func TestLogReplication2AB(t *testing.T) {
 			newNetwork(nil, nil, nil),
 			[]pb.Message{
 				{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
+				// FIXME: MsgHup to others? WTF?
 				{From: 1, To: 2, MsgType: pb.MessageType_MsgHup},
 				{From: 1, To: 2, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("somedata")}}},
 			},
@@ -278,6 +301,7 @@ func TestLogReplication2AB(t *testing.T) {
 				t.Errorf("#%d.%d: committed = %d, want %d", i, j, sm.RaftLog.committed, tt.wcommitted)
 			}
 
+			// debugger.Printf("=====================\n %+v\n %+v\n %+v\n==========================\n", sm, sm.RaftLog, tt.network.storage[j])
 			ents := []pb.Entry{}
 			for _, e := range nextEnts(sm, tt.network.storage[j]) {
 				if e.Data != nil {
@@ -612,6 +636,7 @@ func TestRecvMessageType_MsgRequestVote2AA(t *testing.T) {
 		{StateFollower, 3, 2, None, false},
 		{StateFollower, 3, 3, None, false},
 
+		// FIXME: get vote at the same term again from same candidate? 
 		{StateFollower, 3, 2, 2, false},
 		{StateFollower, 3, 2, 1, true},
 
@@ -1495,7 +1520,7 @@ func TestSplitVote2AA(t *testing.T) {
 		t.Errorf("peer 3 state: %s, want %s", sm.State, StateFollower)
 	}
 }
-
+// FIXME: add comments
 func entsWithConfig(configFunc func(*Config), terms ...uint64) *Raft {
 	storage := NewMemoryStorage()
 	for i, term := range terms {
@@ -1585,6 +1610,7 @@ func (nw *network) send(msgs ...pb.Message) {
 	for len(msgs) > 0 {
 		m := msgs[0]
 		p := nw.peers[m.To]
+		// debugger.Printf("------------------------\nsend message: %+v\n------------------------\n", m)
 		p.Step(m)
 		msgs = append(msgs[1:], nw.filter(p.readMessages())...)
 	}
@@ -1627,6 +1653,7 @@ func (nw *network) filter(msgs []pb.Message) []pb.Message {
 		switch m.MsgType {
 		case pb.MessageType_MsgHup:
 			// hups never go over the network, so don't drop them but panic
+			debugger.Printf("%+v\n", m)
 			panic("unexpected MessageType_MsgHup")
 		default:
 			perc := nw.dropm[connem{m.From, m.To}]

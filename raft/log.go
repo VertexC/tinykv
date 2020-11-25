@@ -14,8 +14,10 @@
 
 package raft
 
-import pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
-
+import (
+	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
+	"fmt"
+)
 // RaftLog manage the log entries, its struct look like:
 //
 //  snapshot/first.....applied....committed....stabled.....last
@@ -61,16 +63,18 @@ type RaftLog struct {
 func newLog(storage Storage) *RaftLog {
 	// Your Code Here (2A).
 	hi, _ := storage.LastIndex()
+	lo, _ := storage.FirstIndex()
+	entries, _ := storage.Entries(lo, hi+1)
 	log := &RaftLog {
 		storage: storage,
-		entries: []pb.Entry {},
-		committed: hi,
+		entries: entries,
+		committed: 0,
 	}
 	return log
 }
 
 // FIXME: add by vertexc
-// return latest log term
+// return latest commited log term
 func (l *RaftLog) logTerm() uint64 {
 	storage := l.storage
 	highestTerm := uint64(0)
@@ -94,24 +98,130 @@ func (l *RaftLog) maybeCompact() {
 
 // unstableEntries return all the unstable entries
 func (l *RaftLog) unstableEntries() []pb.Entry {
-	// Your Code Here (2A).
-	return nil
+	ents := []pb.Entry {}
+	for _, entry := range l.entries {
+		if entry.Index > l.stabled {
+			ents = append(ents, entry)
+		}
+	}
+	return ents
 }
 
 // nextEnts returns all the committed but not applied entries
 func (l *RaftLog) nextEnts() (ents []pb.Entry) {
-	// Your Code Here (2A).
-	return nil
+	ents = []pb.Entry {}
+	for _, entry := range l.entries {
+		if entry.Index > l.applied && entry.Index <= l.committed {
+			ents = append(ents, entry)
+		}
+	}
+	return ents
 }
 
 // LastIndex return the last index of the log entries
 func (l *RaftLog) LastIndex() uint64 {
-	// Your Code Here (2A).
+	if len(l.entries) > 0 {
+		return l.entries[len(l.entries)-1].Index
+	}
 	return 0
 }
 
 // Term return the term of the entry in the given index
 func (l *RaftLog) Term(i uint64) (uint64, error) {
-	// Your Code Here (2A).
-	return 0, nil
+	err := fmt.Errorf("No index %d found", i)
+	term := uint64(0)
+	for _, entry := range l.entries {
+		if entry.Index == i {
+			term = entry.Term
+			err = nil
+			break
+		}
+	}
+	return term, err
+}
+
+// FIXME: my add
+// return entries within [low, hi)
+func (l *RaftLog) Entries(low uint64, hi uint64) []*pb.Entry {
+	entries := []*pb.Entry{}
+	for i, entry := range l.entries {
+		if entry.Index > low {
+			entries = append(entries, &l.entries[i])
+		}
+		if entry.Index >= hi {
+			break
+		}
+	}
+	return entries
+}
+
+// FIXME: my add
+// commit entries up to index
+func (l *RaftLog) Commit(i uint64){
+	l.committed = i
+	// TODO: do commit
+}
+
+// cover log entries strictly after given index with given entries, 
+// old log entries with index larger than largest new log index will remain
+func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
+	if len(entries) == 0 {
+		return // shall never happens in real case, just for passing the test
+	}
+	newEntries := []pb.Entry{}
+
+	i := 0
+	for ;i<len(l.entries);i++  {
+		oldEntry := l.entries[i]
+		if oldEntry.Index <= index {
+			newEntries = append(newEntries, oldEntry)
+		} else {
+			break
+		}
+	}
+	j := 0
+	for i < len(l.entries) && j < len(entries) {
+		oldEntry := l.entries[i]
+		newEntry := entries[j]
+
+		// check conflict
+		if oldEntry.Index == newEntry.Index {
+			if oldEntry.Term != newEntry.Term {
+				// confliction
+				break
+			} else {
+				newEntries = append(newEntries, oldEntry)
+				i ++
+				j ++
+			}
+		} else {
+			j++
+		}
+	}
+	// debugger.Printf("i: %d, j:%d\n", i, j)
+	
+	for k:=j;k<len(entries);k++ {
+		newEntries = append(newEntries, *entries[k])
+	}
+	if j == len(entries) {
+		for k:=i;k<len(l.entries);k++ {
+			newEntries = append(newEntries, l.entries[k])
+		}
+	}
+	l.entries = newEntries
+	
+	// oldStabled := l.stabled
+	// update stable
+	if j < len(entries) { 
+		l.stabled = entries[j].Index - 1
+	} else { // if j == len(entries), then no conflict ever happens -> mark all
+		l.stabled = l.LastIndex()
+	}
+
+	// TODO: append to storage??
+	// for _, entry := range l.entries {
+	// 	if entry.Index > oldStabled && entry.Index <= l.stabled {
+	// 		l.storage.Append([]pb.Entry{entry})
+	// 	}
+	// }
 }

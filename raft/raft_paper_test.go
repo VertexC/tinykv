@@ -375,7 +375,7 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 	r := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, s)
 	r.becomeCandidate()
 	r.becomeLeader()
-	commitNoopEntry(r, s)
+	commitNoopEntry(r, s) // -> FIXME: infer that append entries is done in leader
 	li := r.RaftLog.LastIndex()
 
 	ents := []*pb.Entry{{Data: []byte("some data")}}
@@ -398,6 +398,7 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 	if !reflect.DeepEqual(msgs, wmsgs) {
 		t.Errorf("msgs = %+v, want %+v", msgs, wmsgs)
 	}
+	// the propose data is not stable?
 	if g := r.RaftLog.unstableEntries(); !reflect.DeepEqual(g, wents) {
 		t.Errorf("ents = %+v, want %+v", g, wents)
 	}
@@ -471,6 +472,9 @@ func TestLeaderAcknowledgeCommit2AB(t *testing.T) {
 		r.becomeLeader()
 		commitNoopEntry(r, s)
 		li := r.RaftLog.LastIndex()
+		// if i == 0 {
+		// 	debugger.Printf("%+v\n+%+v\n", r, r.RaftLog)
+		// }
 		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{Data: []byte("some data")}}})
 
 		for _, m := range r.readMessages() {
@@ -480,6 +484,7 @@ func TestLeaderAcknowledgeCommit2AB(t *testing.T) {
 		}
 
 		if g := r.RaftLog.committed > li; g != tt.wack {
+			// debugger.Printf("%+v\n+%+v\n", r, r.RaftLog)
 			t.Errorf("#%d: ack commit = %v, want %v", i, g, tt.wack)
 		}
 	}
@@ -578,6 +583,7 @@ func TestFollowerCommitEntry2AB(t *testing.T) {
 // then it refuses the new entries. Otherwise it replies that it accepts the
 // append entries.
 // Reference: section 5.3
+// FIXME: bad test since no new entries
 func TestFollowerCheckMessageType_MsgAppend2AB(t *testing.T) {
 	ents := []pb.Entry{{Term: 1, Index: 1}, {Term: 2, Index: 2}}
 	tests := []struct {
@@ -737,9 +743,11 @@ func TestLeaderSyncFollowerLog2AB(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
+		debugger.Println(i)
 		leadStorage := NewMemoryStorage()
 		leadStorage.Append(ents)
 		lead := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, leadStorage)
+		// debugger.Printf("%+v\n%+v\n", lead, lead.RaftLog)
 		lead.Term = term
 		lead.RaftLog.committed = lead.RaftLog.LastIndex()
 		followerStorage := NewMemoryStorage()
@@ -882,8 +890,9 @@ func TestLeaderOnlyCommitsLogFromCurrentTerm2AB(t *testing.T) {
 		r.readMessages()
 		// propose a entry to current term
 		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
-
+		debugger.Printf("%+v\n%+v\n", r, r.RaftLog)
 		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppendResponse, Term: r.Term, Index: tt.index})
+		debugger.Printf("%+v\n%+v\n", r, r.RaftLog)
 		if r.RaftLog.committed != tt.wcommit {
 			t.Errorf("#%d: commit = %d, want %d", i, r.RaftLog.committed, tt.wcommit)
 		}
@@ -900,6 +909,7 @@ func commitNoopEntry(r *Raft, s *MemoryStorage) {
 	if r.State != StateLeader {
 		panic("it should only be used when it is the leader")
 	}
+	// FIXME: Why not sendAppend to itself?
 	for id := range r.Prs {
 		if id == r.id {
 			continue
@@ -909,6 +919,7 @@ func commitNoopEntry(r *Raft, s *MemoryStorage) {
 	}
 	// simulate the response of MessageType_MsgAppend
 	msgs := r.readMessages()
+	// fmt.Println(msgs)
 	for _, m := range msgs {
 		if m.MsgType != pb.MessageType_MsgAppend || len(m.Entries) != 1 || m.Entries[0].Data != nil {
 			panic("not a message to append noop entry")
