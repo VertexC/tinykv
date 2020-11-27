@@ -55,7 +55,7 @@ type RaftLog struct {
 
 	// Your Data Here (2A).
 	// last term of entries
-	highestTerm uint64
+	newest uint64
 }
 
 // newLog returns log using the given storage. It recovers the log
@@ -74,19 +74,11 @@ func newLog(storage Storage) *RaftLog {
 }
 
 // FIXME: add by vertexc
-// return latest commited log term
+// return latest log term
 func (l *RaftLog) logTerm() uint64 {
-	storage := l.storage
-	highestTerm := uint64(0)
-	li, _ := storage.FirstIndex()
-	hi, _ := storage.LastIndex()
-	for i:=li; i<=hi; i++ {
-		term, _ := storage.Term(i)
-		if term > highestTerm {
-			highestTerm = term
-		}
-	}
-	return highestTerm
+	li := l.LastIndex()
+	term, _ := l.Term(li)
+	return term
 }
 
 // We need to compact the log entries in some point of time like
@@ -157,14 +149,19 @@ func (l *RaftLog) Entries(low uint64, hi uint64) []*pb.Entry {
 
 // FIXME: my add
 // commit entries up to index
-func (l *RaftLog) Commit(i uint64){
-	l.committed = i
+func (l *RaftLog) Commit(i uint64) bool {
+	if i > l.committed {
+		l.committed = i
+		return true
+	}
+	return false
 	// TODO: do commit
 }
 
 // cover log entries strictly after given index with given entries, 
 // old log entries with index larger than largest new log index will remain
 func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
+	l.newest = index + uint64(len(entries))
 	if len(entries) == 0 {
 		return // shall never happens in real case, just for passing the test
 	}
@@ -217,11 +214,8 @@ func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
 	} else { // if j == len(entries), then no conflict ever happens -> mark all
 		l.stabled = l.LastIndex()
 	}
+}
 
-	// TODO: append to storage??
-	// for _, entry := range l.entries {
-	// 	if entry.Index > oldStabled && entry.Index <= l.stabled {
-	// 		l.storage.Append([]pb.Entry{entry})
-	// 	}
-	// }
+func (l *RaftLog) updateCommit (i uint64) {
+	l.Commit(min(i, l.newest))
 }

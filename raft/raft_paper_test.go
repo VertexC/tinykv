@@ -433,6 +433,7 @@ func TestLeaderCommitEntry2AB(t *testing.T) {
 	}
 	msgs := r.readMessages()
 	sort.Sort(messageSlice(msgs))
+	debugger.Println(msgs)
 	for i, m := range msgs {
 		if w := uint64(i + 2); m.To != w {
 			t.Errorf("to = %d, want %d", m.To, w)
@@ -743,7 +744,9 @@ func TestLeaderSyncFollowerLog2AB(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
-		debugger.Println(i)
+		if i != 4 {
+			continue
+		}
 		leadStorage := NewMemoryStorage()
 		leadStorage.Append(ents)
 		lead := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, leadStorage)
@@ -887,12 +890,14 @@ func TestLeaderOnlyCommitsLogFromCurrentTerm2AB(t *testing.T) {
 		// become leader at term 3
 		r.becomeCandidate()
 		r.becomeLeader()
-		r.readMessages()
+		msgs := r.readMessages() // read what?
+		debugger.Println(msgs)
 		// propose a entry to current term
+		debugRaft(r)
 		r.Step(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
-		debugger.Printf("%+v\n%+v\n", r, r.RaftLog)
+		debugRaft(r)
 		r.Step(pb.Message{From: 2, To: 1, MsgType: pb.MessageType_MsgAppendResponse, Term: r.Term, Index: tt.index})
-		debugger.Printf("%+v\n%+v\n", r, r.RaftLog)
+		debugRaft(r)
 		if r.RaftLog.committed != tt.wcommit {
 			t.Errorf("#%d: commit = %d, want %d", i, r.RaftLog.committed, tt.wcommit)
 		}
