@@ -174,7 +174,6 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 		t.Errorf("term = %d, want 3", sm1.Term)
 	}
 
-
 	// for i := range n.peers {
 	// 	sm := n.peers[i].(*Raft)
 	// 	entries := sm.RaftLog.entries
@@ -641,7 +640,7 @@ func TestRecvMessageType_MsgRequestVote2AA(t *testing.T) {
 		{StateFollower, 3, 2, None, false},
 		{StateFollower, 3, 3, None, false},
 
-		// FIXME: get vote at the same term again from same candidate? 
+		// FIXME: get vote at the same term again from same candidate?
 		{StateFollower, 3, 2, 2, false},
 		{StateFollower, 3, 2, 1, true},
 
@@ -1525,6 +1524,7 @@ func TestSplitVote2AA(t *testing.T) {
 		t.Errorf("peer 3 state: %s, want %s", sm.State, StateFollower)
 	}
 }
+
 // FIXME: add comments
 func entsWithConfig(configFunc func(*Config), terms ...uint64) *Raft {
 	storage := NewMemoryStorage()

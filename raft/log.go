@@ -15,9 +15,10 @@
 package raft
 
 import (
-	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 	"fmt"
+	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
+
 // RaftLog manage the log entries, its struct look like:
 //
 //  snapshot/first.....applied....committed....stabled.....last
@@ -31,7 +32,7 @@ type RaftLog struct {
 	storage Storage
 
 	// FIXME: what is the difference between commited and stabled???
-	
+
 	// committed is the highest log position that is known to be in
 	// stable storage on a quorum of nodes.
 	committed uint64
@@ -65,10 +66,12 @@ func newLog(storage Storage) *RaftLog {
 	hi, _ := storage.LastIndex()
 	lo, _ := storage.FirstIndex()
 	entries, _ := storage.Entries(lo, hi+1)
-	log := &RaftLog {
-		storage: storage,
-		entries: entries,
-		committed: 0,
+	hardSt, _, _ := storage.InitialState()
+	log := &RaftLog{
+		storage:   storage,
+		entries:   entries,
+		committed: hardSt.Commit,
+		stabled:   hi,
 	}
 	return log
 }
@@ -90,7 +93,7 @@ func (l *RaftLog) maybeCompact() {
 
 // unstableEntries return all the unstable entries
 func (l *RaftLog) unstableEntries() []pb.Entry {
-	ents := []pb.Entry {}
+	ents := []pb.Entry{}
 	for _, entry := range l.entries {
 		if entry.Index > l.stabled {
 			ents = append(ents, entry)
@@ -101,7 +104,7 @@ func (l *RaftLog) unstableEntries() []pb.Entry {
 
 // nextEnts returns all the committed but not applied entries
 func (l *RaftLog) nextEnts() (ents []pb.Entry) {
-	ents = []pb.Entry {}
+	ents = []pb.Entry{}
 	for _, entry := range l.entries {
 		if entry.Index > l.applied && entry.Index <= l.committed {
 			ents = append(ents, entry)
@@ -158,7 +161,7 @@ func (l *RaftLog) Commit(i uint64) bool {
 	// TODO: do commit
 }
 
-// cover log entries strictly after given index with given entries, 
+// cover log entries strictly after given index with given entries,
 // old log entries with index larger than largest new log index will remain
 func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
 	l.newest = index + uint64(len(entries))
@@ -168,7 +171,7 @@ func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
 	newEntries := []pb.Entry{}
 
 	i := 0
-	for ;i<len(l.entries);i++  {
+	for ; i < len(l.entries); i++ {
 		oldEntry := l.entries[i]
 		if oldEntry.Index <= index {
 			newEntries = append(newEntries, oldEntry)
@@ -188,34 +191,34 @@ func (l *RaftLog) CoverEntriesAfterIndex(index uint64, entries []*pb.Entry) {
 				break
 			} else {
 				newEntries = append(newEntries, oldEntry)
-				i ++
-				j ++
+				i++
+				j++
 			}
 		} else {
 			j++
 		}
 	}
 	// debugger.Printf("i: %d, j:%d\n", i, j)
-	
-	for k:=j;k<len(entries);k++ {
+
+	for k := j; k < len(entries); k++ {
 		newEntries = append(newEntries, *entries[k])
 	}
 	if j == len(entries) {
-		for k:=i;k<len(l.entries);k++ {
+		for k := i; k < len(l.entries); k++ {
 			newEntries = append(newEntries, l.entries[k])
 		}
 	}
 	l.entries = newEntries
-	
+
 	// oldStabled := l.stabled
 	// update stable
-	if j < len(entries) { 
+	if j < len(entries) {
 		l.stabled = entries[j].Index - 1
 	} else { // if j == len(entries), then no conflict ever happens -> mark all
 		l.stabled = l.LastIndex()
 	}
 }
 
-func (l *RaftLog) updateCommit (i uint64) {
+func (l *RaftLog) updateCommit(i uint64) {
 	l.Commit(min(i, l.newest))
 }

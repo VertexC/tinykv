@@ -392,7 +392,7 @@ func (r *Raft) Step(m pb.Message) error {
 			// Index: r.RaftLog.committed,
 		})
 		// ask for peer's vote
-		for peer, _ := range r.Prs {
+		for peer := range r.Prs {
 			if peer != r.id {
 				term, _ := r.RaftLog.Term(r.RaftLog.LastIndex())
 				msg := pb.Message{
@@ -408,7 +408,7 @@ func (r *Raft) Step(m pb.Message) error {
 		}
 	case pb.MessageType_MsgBeat:
 		if r.State == StateLeader {
-			for peer, _ := range r.Prs {
+			for peer := range r.Prs {
 				if peer != r.id {
 					r.sendHeartbeat(peer)
 				}
@@ -425,7 +425,7 @@ func (r *Raft) Step(m pb.Message) error {
 				r.RaftLog.entries = append(r.RaftLog.entries, e)
 			}
 			// also send to itself
-			for peer, _ := range r.Prs {
+			for peer := range r.Prs {
 				r.sendAppend(peer)
 			}
 		}
@@ -504,7 +504,7 @@ func (r *Raft) Step(m pb.Message) error {
 					r.becomeLeader()
 
 					// send bcast
-					for peer, _ := range r.Prs {
+					for peer := range r.Prs {
 						if peer != r.id {
 							r.sendAppend(peer)
 						}
@@ -606,7 +606,7 @@ func (r *Raft) handleAppendEntriesResponse(m pb.Message) {
 				changed := r.RaftLog.Commit(repIndex)
 				// refresh peer's comit
 				if changed {
-					for peer, _ := range r.Prs {
+					for peer := range r.Prs {
 						if r.id != peer {
 							r.sendAppend(peer)
 						}
@@ -620,9 +620,19 @@ func (r *Raft) handleAppendEntriesResponse(m pb.Message) {
 // handleHeartbeat handle Heartbeat RPC request
 func (r *Raft) handleHeartbeat(m pb.Message) {
 	r.RaftLog.updateCommit(m.Commit)
-	
+
 	// reset hearbeat
 	r.heartbeatElapsed = 0
+}
+
+func (r *Raft) softState() *SoftState { return &SoftState{Lead: r.Lead, RaftState: r.State} }
+
+func (r *Raft) hardState() pb.HardState {
+	return pb.HardState{
+		Term:   r.Term,
+		Vote:   r.Vote,
+		Commit: r.RaftLog.committed,
+	}
 }
 
 // handleSnapshot handle Snapshot RPC request
