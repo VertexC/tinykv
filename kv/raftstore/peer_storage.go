@@ -308,7 +308,29 @@ func ClearMeta(engines *engine_util.Engines, kvWB, raftWB *engine_util.WriteBatc
 // never be committed
 func (ps *PeerStorage) Append(entries []eraftpb.Entry, raftWB *engine_util.WriteBatch) error {
 	// Your Code Here (2B).
-	return nil
+
+	// entries to append
+	for _, entry := range entries {
+		raftWB.SetMeta(meta.RaftLogKey(ps.region.Id, entry.Index), &entry)
+	}
+	currentLastIndex := entries[len(entries)-1].Index
+	currentLastTerm := entries[len(entries)-1].Term
+
+	// update raftState
+	ps.raftState.LastIndex = currentLastIndex
+	ps.raftState.LastTerm = currentLastTerm
+
+	firstIndex, _ := ps.FirstIndex()
+	lastIndex, _ := ps.LastIndex()
+	// entries to delete
+	prevEntries, err := ps.Entries(firstIndex, lastIndex)
+	for _, entry := range prevEntries {
+		if entry.Index > currentLastIndex {
+			raftWB.DeleteMeta(meta.RaftLogKey(ps.region.Id, entry.Index))
+		}
+	}
+
+	return err
 }
 
 // Apply the peer with given snapshot
@@ -331,7 +353,50 @@ func (ps *PeerStorage) ApplySnapshot(snapshot *eraftpb.Snapshot, kvWB *engine_ut
 func (ps *PeerStorage) SaveReadyState(ready *raft.Ready) (*ApplySnapResult, error) {
 	// Hint: you may call `Append()` and `ApplySnapshot()` in this function
 	// Your Code Here (2B/2C).
-	return nil, nil
+
+	var err error
+	// TODO: deal with error
+	// set hardState of raftState
+	hd := ready.HardState
+	ps.raftState.HardState = &hd
+
+	raftWB := &engine_util.WriteBatch{}
+	kvWB := &engine_util.WriteBatch{}
+
+	// process stable entries
+	if len(ready.Entries) > 0 {
+		err = ps.Append(ready.Entries, raftWB)
+	}
+
+	// process committed entries
+	if len(ready.CommittedEntries) > 0 {
+		lastApplyIndex := ready.CommittedEntries[len(ready.CommittedEntries)-1].Index
+		ps.applyState.AppliedIndex = lastApplyIndex
+
+		for _, entry := range ready.CommittedEntries {
+			kvWB.SetCF(engine_util.CfDefault, meta.RegionStateKey(ps.region.Id), entry.Data)
+		}
+	}
+
+	kvWB.SetMeta(meta.ApplyStateKey(ps.region.Id), ps.applyState)
+	raftWB.SetMeta(meta.RaftStateKey(ps.region.Id), ps.raftState)
+
+	// save all into db
+	err = raftWB.WriteToDB(ps.Engines.Raft)
+	err = kvWB.WriteToDB(ps.Engines.Kv)
+	return nil, err
+}
+
+func (ps *PeerStorage) PutCF(Cf string, Key []byte, Value []byte) error {
+	return engine_util.PutCF(ps.Engines.Kv, Cf, Key, Value)
+}
+
+func (ps *PeerStorage) DeleteCF(Cf string, Key []byte) error {
+	return engine_util.DeleteCF(ps.Engines.Kv, Cf, Key)
+}
+
+func (ps *PeerStorage) WriteBatch() {
+	
 }
 
 func (ps *PeerStorage) ClearData() {

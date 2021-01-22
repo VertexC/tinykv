@@ -96,7 +96,7 @@ func NewMemoryStorage() *MemoryStorage {
 // InitialState implements the Storage interface.
 func (ms *MemoryStorage) InitialState() (pb.HardState, pb.ConfState, error) {
 	if ms.snapshot.Metadata != nil {
-		// FIXME: why simply return here with pointer deference? would cause panic if Metadata is nil
+	// FIXME: why simply return here with pointer deference? would cause panic if Metadata is nil
 		return ms.hardState, *ms.snapshot.Metadata.ConfState, nil
 	} else {
 		return ms.hardState, pb.ConfState{}, nil

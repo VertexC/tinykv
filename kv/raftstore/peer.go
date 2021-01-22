@@ -193,6 +193,15 @@ func (p *peer) MaybeDestroy() bool {
 	return true
 }
 
+func (p *peer) RetriveCallBack(index uint64, term uint64) *message.Callback {
+	for _, proposal := range p.proposals {
+		if proposal.index == index && proposal.term == term{
+			return proposal.cb
+		}
+	}
+	panic("Proposal not Found!")
+}
+
 /// Does the real destroy worker.Task which includes:
 /// 1. Set the region to tombstone;
 /// 2. Clear data;

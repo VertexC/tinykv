@@ -1311,6 +1311,7 @@ func (m *RaftResponseHeader) GetError() *errorpb.Error {
 	return nil
 }
 
+// FIXME: not used anyware?
 func (m *RaftResponseHeader) GetUuid() []byte {
 	if m != nil {
 		return m.Uuid

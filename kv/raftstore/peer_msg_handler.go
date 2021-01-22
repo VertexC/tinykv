@@ -15,6 +15,7 @@ import (
 	rspb "github.com/pingcap-incubator/tinykv/proto/pkg/raft_serverpb"
 	"github.com/pingcap-incubator/tinykv/scheduler/pkg/btree"
 	"github.com/pingcap/errors"
+	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
 )
 
 type PeerTick int
@@ -42,7 +43,150 @@ func (d *peerMsgHandler) HandleRaftReady() {
 	if d.stopped {
 		return
 	}
-	// Your Code Here (2B).
+	/*
+		rd := Node.Ready()
+		saveToStorage(rd.State, rd.Entries, rd.Snapshot)
+		send(rd.Messages)
+		for _, entry := range rd.CommittedEntries {
+		  process(entry)
+		}
+		s.Node.Advance(rd)
+	*/
+	peer := d.peer
+	node := peer.RaftGroup
+	if !node.HasReady() {
+		return
+	}
+	rd := node.Ready()
+	storage := peer.peerStorage
+	storage.SaveReadyState(&rd)
+	// process commitedEntries
+	for _, entry := range rd.CommittedEntries {
+		data := entry.Data
+		index := entry.Index
+		cmdReq := new(raft_cmdpb.RaftCmdRequest)
+		if err := cmdReq.Unmarshal(data); err != nil {
+			panic(err)
+		}
+		term := cmdReq.Header.Term
+		cb := d.peer.RetriveCallBack(index, term)
+		d.ExecuteRaftCmd(term, cmdReq, cb)
+	}
+	// TODO: send messages
+	node.Advance(rd)
+	return
+}
+
+func (d *peerMsgHandler) ExecuteRaftCmd(term uint64, cmdReq *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
+	for _, req := range cmdReq.Requests {
+		switch req.CmdType {
+		case raft_cmdpb.CmdType_Put:
+			d.ExecuteWriteBatch(cmdReq, cb)
+		case raft_cmdpb.CmdType_Delete:
+			d.ExecuteWriteBatch(cmdReq, cb)
+		case raft_cmdpb.CmdType_Get:
+			d.ExecuteGetCmd(cmdReq, cb)
+		case raft_cmdpb.CmdType_Snap:
+			d.ExecuteSnapCmd(cmdReq, cb)
+		}
+		break
+	}
+}
+
+func (d *peerMsgHandler) ExecuteWriteBatch(cmdReq *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
+	cmdResp := &raft_cmdpb.RaftCmdResponse {
+		Header: &raft_cmdpb.RaftResponseHeader {
+			CurrentTerm : cmdReq.Header.Term,
+		},
+	}
+	kvWB := engine_util.WriteBatch {}
+	responses := []*raft_cmdpb.Response {}
+	for _, req := range cmdReq.Requests {
+		switch req.CmdType {
+		case raft_cmdpb.CmdType_Put:
+			responses = append(responses, &raft_cmdpb.Response{
+				CmdType: raft_cmdpb.CmdType_Put,
+				Put: new(raft_cmdpb.PutResponse),
+			})
+			kvWB.SetCF(req.Put.Cf, req.Put.Key, req.Put.Value)
+		case raft_cmdpb.CmdType_Delete:
+			responses = append(responses, &raft_cmdpb.Response{
+				CmdType: raft_cmdpb.CmdType_Delete,
+				Delete: new(raft_cmdpb.DeleteResponse),
+			})
+			kvWB.DeleteCF(req.Delete.Cf, req.Delete.Key)
+		}
+	}
+	err := kvWB.WriteToDB(d.peer.peerStorage.Engines.Kv)
+	if err != nil {
+		BindRespError(cmdResp, err)
+	} else {
+		cmdResp.Responses = responses
+	}
+	cb.Resp = cmdResp
+}
+
+func (d *peerMsgHandler) ExecuteGetCmd(cmdReq *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
+	cmdResp := &raft_cmdpb.RaftCmdResponse {
+		Header: &raft_cmdpb.RaftResponseHeader {
+			CurrentTerm: cmdReq.Header.Term,
+		},
+	}
+	req := cmdReq.Requests[0]
+	value, err := engine_util.GetCF(d.peer.peerStorage.Engines.Kv, req.Get.Cf, req.Get.Key)
+	if err != nil {
+		BindRespError(cmdResp, err)
+	} else {
+		cmdResp.Responses = []*raft_cmdpb.Response {
+			&raft_cmdpb.Response {
+				CmdType: raft_cmdpb.CmdType_Get,
+				Get: & raft_cmdpb.GetResponse {
+					Value: value,
+				},
+			},
+		}
+	}
+	cb.Resp = cmdResp
+}
+
+func (d *peerMsgHandler) ExecuteSnapCmd(cmdReq *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
+	cmdResp := &raft_cmdpb.RaftCmdResponse {
+		Header: &raft_cmdpb.RaftResponseHeader {
+			CurrentTerm: cmdReq.Header.Term,
+		},
+	}
+	cmdResp.Responses = []*raft_cmdpb.Response {
+		&raft_cmdpb.Response {
+			CmdType: raft_cmdpb.CmdType_Snap,
+			Snap: & raft_cmdpb.SnapResponse {
+				Region: d.peer.Region(),
+			},
+		},
+	}
+	cb.Resp = cmdResp
+}
+
+func (d *peerMsgHandler) ExecutePutCmd(cmdReq *raft_cmdpb.RaftCmdRequest, cb *message.Callback) {
+	cmdResp := &raft_cmdpb.RaftCmdResponse {
+		Header: &raft_cmdpb.RaftResponseHeader {
+			CurrentTerm: cmdReq.Header.Term,
+		},
+	}
+	req := cmdReq.Requests[0]
+	value, err := engine_util.GetCF(d.peer.peerStorage.Engines.Kv, req.Get.Cf, req.Get.Key)
+	if err != nil {
+		BindRespError(cmdResp, err)
+	} else {
+		cmdResp.Responses = []*raft_cmdpb.Response {
+			&raft_cmdpb.Response {
+				CmdType: raft_cmdpb.CmdType_Get,
+				Get: & raft_cmdpb.GetResponse {
+					Value: value,
+				},
+			},
+		}
+	}
+	cb.Resp = cmdResp
 }
 
 func (d *peerMsgHandler) HandleMsg(msg message.Msg) {
@@ -114,6 +258,23 @@ func (d *peerMsgHandler) proposeRaftCommand(msg *raft_cmdpb.RaftCmdRequest, cb *
 		return
 	}
 	// Your Code Here (2B).
+	// convert request to log data
+	data, err := msg.Marshal()
+	if err != nil {
+		cb.Done(ErrResp(err))
+		return
+	}
+	index := d.peer.nextProposalIndex()
+	err = d.peer.RaftGroup.Propose(data)
+	if err != nil {
+		cb.Done(ErrResp(err))
+	}
+	term := msg.Header.Term
+	d.peer.proposals = append(d.peer.proposals, &proposal{
+		cb: cb,
+		term: term,
+		index: index,
+	})
 }
 
 func (d *peerMsgHandler) onTick() {
